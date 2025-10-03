@@ -63,6 +63,8 @@
         let gameOver = false;
         const gravity = 0.2;
         const tankSize = { w: 20, h: 10 };
+        const turretRadius = 5;
+        const barrelLength = 12;
         const explosionRadius = 10;
 
         function generateTerrain() {
@@ -87,7 +89,6 @@
             } else {
                 player.angle = Math.min(90, player.angle + 1);
             }
-            // No need to call draw here, gameLoop handles continuous redraw
         });
 
         document.addEventListener('scrollDown', () => {
@@ -97,7 +98,6 @@
             } else {
                 player.angle = Math.max(0, player.angle - 1);
             }
-            // No need to call draw here, gameLoop handles continuous redraw
         });
 
         // Handle PTT button for fire or confirm
@@ -141,9 +141,11 @@
         function fireProjectile(tank) {
             const rad = tank.angle * Math.PI / 180;
             const vel = tank.power / 2; // Scale power
+            const barrelX = tank.x + barrelLength * Math.cos(rad) * tank.dir;
+            const barrelY = tank.y - barrelLength * Math.sin(rad);
             projectile = {
-                x: tank.x + (tankSize.w / 2) * tank.dir,
-                y: tank.y - 5,
+                x: barrelX,
+                y: barrelY,
                 vx: vel * Math.cos(rad) * tank.dir,
                 vy: -vel * Math.sin(rad) // Negative for up (y increases down)
             };
@@ -186,7 +188,7 @@
             for (let i = -explosionRadius; i <= explosionRadius; i++) {
                 const gx = Math.floor(ex + i);
                 if (gx >= 0 && gx < width) {
-                    const dist = Math.sqrt(i * i);
+                    const dist = Math.abs(i);
                     ground[gx] += explosionRadius - dist + 1;
                     ground[gx] = Math.min(height, ground[gx]);
                 }
@@ -207,8 +209,9 @@
             // Improved AI: approximate angle and power
             const dx = player.x - ai.x;
             const dy = player.y - ai.y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            ai.angle = 45 + Math.random() * 10 - 5; // Around 45 for max range
+            ai.angle = Math.atan2(-dy, dx) * 180 / Math.PI; // Approximate angle
+            ai.angle = Math.max(0, Math.min(90, Math.abs(ai.angle))); // Clamp
+            const dist = Math.hypot(dx, dy);
             ai.power = Math.sqrt(dist * gravity * 2) + Math.random() * 10 - 5;
             ai.power = Math.max(20, Math.min(80, ai.power));
             fireProjectile(ai);
@@ -302,15 +305,21 @@
             ctx.fillStyle = color;
             ctx.fillRect(tank.x - tankSize.w / 2, tank.y - tankSize.h / 2, tankSize.w, tankSize.h);
 
+            // Turret base (independent rotation visual)
+            ctx.fillStyle = 'dark' + color;
+            ctx.beginPath();
+            ctx.arc(tank.x, tank.y - tankSize.h / 2 + turretRadius / 2, turretRadius, 0, Math.PI * 2);
+            ctx.fill();
+
             // Barrel
             const rad = tank.angle * Math.PI / 180;
-            const barrelLength = 15;
+            const turretY = tank.y - tankSize.h / 2 + turretRadius / 2;
             const bx = tank.x + barrelLength * Math.cos(rad) * tank.dir;
-            const by = tank.y - barrelLength * Math.sin(rad); // y decreases up
+            const by = turretY - barrelLength * Math.sin(rad); // y decreases up
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.moveTo(tank.x, tank.y);
+            ctx.moveTo(tank.x, turretY);
             ctx.lineTo(bx, by);
             ctx.stroke();
         }
