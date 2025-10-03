@@ -87,6 +87,7 @@
             } else {
                 player.angle = Math.min(90, player.angle + 1);
             }
+            // No need to call draw here, gameLoop handles continuous redraw
         });
 
         document.addEventListener('scrollDown', () => {
@@ -96,6 +97,7 @@
             } else {
                 player.angle = Math.max(0, player.angle - 1);
             }
+            // No need to call draw here, gameLoop handles continuous redraw
         });
 
         // Handle PTT button for fire or confirm
@@ -169,10 +171,10 @@
 
             // Check hit on opponent
             const opponent = turn === 'player' ? ai : player;
-            if (Math.abs(projectile.x - opponent.x) < tankSize.w / 2 &&
-                Math.abs(projectile.y - opponent.y) < tankSize.h / 2) {
+            if (Math.abs(projectile.x - opponent.x) < tankSize.w / 2 + 2 &&
+                Math.abs(projectile.y - opponent.y) < tankSize.h / 2 + 2) {
                 opponent.health -= 20; // Fixed damage
-                explode(px, projectile.y);
+                explode(projectile.x, projectile.y);
                 projectile = null;
                 checkWin();
                 switchTurn();
@@ -182,15 +184,16 @@
         function explode(ex, ey) {
             // Simple crater
             for (let i = -explosionRadius; i <= explosionRadius; i++) {
-                const gx = ex + i;
+                const gx = Math.floor(ex + i);
                 if (gx >= 0 && gx < width) {
-                    ground[gx] += Math.floor(Math.sqrt(explosionRadius * explosionRadius - i * i)) || 0;
+                    const dist = Math.sqrt(i * i);
+                    ground[gx] += explosionRadius - dist + 1;
                     ground[gx] = Math.min(height, ground[gx]);
                 }
             }
             // Adjust tanks if ground changes
-            player.y = ground[player.x] - tankSize.h / 2;
-            ai.y = ground[ai.x] - tankSize.h / 2;
+            player.y = ground[Math.floor(player.x)] - tankSize.h / 2;
+            ai.y = ground[Math.floor(ai.x)] - tankSize.h / 2;
         }
 
         function switchTurn() {
@@ -201,11 +204,12 @@
         }
 
         function aiTurn() {
-            // Simple AI: aim at player
-            const dist = Math.abs(ai.x - player.x);
-            ai.angle = 30 + Math.random() * 45;
-            const rad = ai.angle * Math.PI / 180;
-            ai.power = Math.sqrt(dist * gravity / Math.sin(2 * rad)) + Math.random() * 10 - 5;
+            // Improved AI: approximate angle and power
+            const dx = player.x - ai.x;
+            const dy = player.y - ai.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            ai.angle = 45 + Math.random() * 10 - 5; // Around 45 for max range
+            ai.power = Math.sqrt(dist * gravity * 2) + Math.random() * 10 - 5;
             ai.power = Math.max(20, Math.min(80, ai.power));
             fireProjectile(ai);
         }
@@ -282,6 +286,14 @@
                 if (powerMode) {
                     ctx.fillText('Power Mode', 10, 80);
                 }
+            }
+
+            // Draw power bar for visual feedback
+            if (turn === 'player' && powerMode) {
+                ctx.fillStyle = 'gray';
+                ctx.fillRect(10, 90, 100, 10);
+                ctx.fillStyle = 'yellow';
+                ctx.fillRect(10, 90, player.power, 10);
             }
         }
 
