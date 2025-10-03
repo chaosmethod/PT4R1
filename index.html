@@ -84,7 +84,8 @@
         generateTerrain();
 
         // Handle scroll wheel for angle or power
-        document.addEventListener('scrollUp', () => {
+        window.addEventListener('scrollUp', () => {
+            console.log('Scroll up');
             if (gameOver || turn !== 'player') return;
             if (powerMode) {
                 player.power = Math.min(100, player.power + 1);
@@ -93,7 +94,8 @@
             }
         });
 
-        document.addEventListener('scrollDown', () => {
+        window.addEventListener('scrollDown', () => {
+            console.log('Scroll down');
             if (gameOver || turn !== 'player') return;
             if (powerMode) {
                 player.power = Math.max(0, player.power - 1);
@@ -103,7 +105,8 @@
         });
 
         // Handle PTT button for fire or confirm
-        document.addEventListener('sideClick', () => {
+        window.addEventListener('sideClick', () => {
+            console.log('Side click');
             if (gameOver || turn !== 'player' || projectile) return;
             if (powerMode) {
                 powerMode = false;
