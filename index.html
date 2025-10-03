@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=240, height=282, initial-scale=1.0">
+    <title>Pocket Tanks for Rabbit R1</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: black;
+        }
+        #game {
+            display: block;
+        }
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 5px 10px;
+            font-size: 12px;
+            background: #333;
+            color: white;
+            border: 1px solid white;
+            cursor: pointer;
+        }
+        #restart {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game" width="240" height="282"></canvas>
+    <div class="controls">
+        <button id="left">Left</button>
+        <button id="right">Right</button>
+        <button id="power">Adjust Power</button>
+    </div>
+    <button id="restart">Play Again</button>
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+
+        let ground = new Array(width).fill(height - 50); // Base ground level
+        let player = { x: 30, y: 0, angle: 45, power: 50, health: 100, dir: 1 };
+        let ai = { x: 210, y: 0, angle: 45, power: 50, health: 100, dir: -1 };
+        let turn = 'player';
+        let projectile = null;
+        let powerMode = false;
+        let gameOver = false;
+        const gravity = 0.2;
+        const tankSize = { w: 20, h: 10 };
+        const explosionRadius = 10;
+
+        function generateTerrain() {
+            let h = height - 50 - Math.random() * 20;
+            for (let x = 0; x < width; x++) {
+                ground[x] = Math.floor(h);
+                h += Math.random() * 4 - 2;
+                if (h > height - 30) h = height - 30;
+                if (h < height - 100) h = height - 100;
+            }
+            player.y = ground[player.x] - tankSize.h / 2;
+            ai.y = ground[ai.x] - tankSize.h / 2;
+        }
+
+        generateTerrain();
+
+        // Handle scroll wheel for angle or power
+        document.addEventListener('scrollUp', () => {
+            if (gameOver || turn !== 'player') return;
+            if (powerMode) {
+                player.power = Math.min(100, player.power + 1);
+            } else {
+                player.angle = Math.min(90, player.angle + 1);
+            }
+        });
+
+        document.addEventListener('scrollDown', () => {
+            if (gameOver || turn !== 'player') return;
+            if (powerMode) {
+                player.power = Math.max(0, player.power - 1);
+            } else {
+                player.angle = Math.max(0, player.angle - 1);
+            }
+        });
+
+        // Handle PTT button for fire or confirm
+        document.addEventListener('sideClick', () => {
+            if (gameOver || turn !== 'player' || projectile) return;
+            if (powerMode) {
+                powerMode = false;
+            } else {
+                fireProjectile(player);
+            }
+        });
+
+        // Touch buttons for movement and power mode
+        document.getElementById('left').addEventListener('click', () => {
+            if (gameOver || turn !== 'player' || projectile) return;
+            moveTank(player, -5);
+        });
+
+        document.getElementById('right').addEventListener('click', () => {
+            if (gameOver || turn !== 'player' || projectile) return;
+            moveTank(player, 5);
+        });
+
+        document.getElementById('power').addEventListener('click', () => {
+            if (gameOver || turn !== 'player' || projectile) return;
+            powerMode = !powerMode;
+        });
+
+        document.getElementById('restart').addEventListener('click', () => {
+            resetGame();
+        });
+
+        function moveTank(tank, dx) {
+            let newX = Math.max(0, Math.min(width - tankSize.w, tank.x + dx));
+            if (Math.abs(ground[newX] - ground[tank.x]) < 20) { // Prevent steep climbs
+                tank.x = newX;
+                tank.y = ground[newX] - tankSize.h / 2;
+            }
+        }
+
+        function fireProjectile(tank) {
+            const rad = tank.angle * Math.PI / 180;
+            const vel = tank.power / 2; // Scale power
+            projectile = {
+                x: tank.x + (tankSize.w / 2) * tank.dir,
+                y: tank.y - 5,
+                vx: vel * Math.cos(rad) * tank.dir,
+                vy: -vel * Math.sin(rad) // Negative for up (y increases down)
+            };
+        }
+
+        function updateProjectile() {
+            if (!projectile) return;
+            projectile.x += projectile.vx;
+            projectile.y += projectile.vy;
+            projectile.vy += gravity;
+
+            if (projectile.x < 0 || projectile.x > width || projectile.y > height) {
+                projectile = null;
+                switchTurn();
+                return;
+            }
+
+            const px = Math.floor(projectile.x);
+            if (projectile.y >= ground[px]) {
+                explode(px, projectile.y);
+                projectile = null;
+                switchTurn();
+                return;
+            }
+
+            // Check hit on opponent
+            const opponent = turn === 'player' ? ai : player;
+            if (Math.abs(projectile.x - opponent.x) < tankSize.w / 2 &&
+                Math.abs(projectile.y - opponent.y) < tankSize.h / 2) {
+                opponent.health -= 20; // Fixed damage
+                explode(px, projectile.y);
+                projectile = null;
+                checkWin();
+                switchTurn();
+            }
+        }
+
+        function explode(ex, ey) {
+            // Simple crater
+            for (let i = -explosionRadius; i <= explosionRadius; i++) {
+                const gx = ex + i;
+                if (gx >= 0 && gx < width) {
+                    ground[gx] += Math.floor(Math.sqrt(explosionRadius * explosionRadius - i * i)) || 0;
+                    ground[gx] = Math.min(height, ground[gx]);
+                }
+            }
+            // Adjust tanks if ground changes
+            player.y = ground[player.x] - tankSize.h / 2;
+            ai.y = ground[ai.x] - tankSize.h / 2;
+        }
+
+        function switchTurn() {
+            turn = turn === 'player' ? 'ai' : 'player';
+            if (turn === 'ai') {
+                aiTurn();
+            }
+        }
+
+        function aiTurn() {
+            // Simple AI: aim at player
+            const dist = Math.abs(ai.x - player.x);
+            ai.angle = 30 + Math.random() * 45;
+            const rad = ai.angle * Math.PI / 180;
+            ai.power = Math.sqrt(dist * gravity / Math.sin(2 * rad)) + Math.random() * 10 - 5;
+            ai.power = Math.max(20, Math.min(80, ai.power));
+            fireProjectile(ai);
+        }
+
+        function checkWin() {
+            if (player.health <= 0) {
+                gameOver = true;
+                draw(); // Redraw to show final state
+                ctx.fillStyle = 'white';
+                ctx.font = '20px Arial';
+                ctx.fillText('AI Wins!', width / 2 - 50, height / 2);
+                document.getElementById('restart').style.display = 'block';
+            } else if (ai.health <= 0) {
+                gameOver = true;
+                draw();
+                ctx.fillStyle = 'white';
+                ctx.font = '20px Arial';
+                ctx.fillText('Player Wins!', width / 2 - 60, height / 2);
+                document.getElementById('restart').style.display = 'block';
+            }
+        }
+
+        function resetGame() {
+            player.health = 100;
+            ai.health = 100;
+            player.angle = 45;
+            player.power = 50;
+            ai.angle = 45;
+            ai.power = 50;
+            projectile = null;
+            powerMode = false;
+            gameOver = false;
+            turn = 'player';
+            generateTerrain();
+            document.getElementById('restart').style.display = 'none';
+        }
+
+        function draw() {
+            // Clear
+            ctx.fillStyle = 'skyblue';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw ground
+            ctx.fillStyle = 'green';
+            ctx.beginPath();
+            ctx.moveTo(0, height);
+            for (let x = 0; x < width; x++) {
+                ctx.lineTo(x, ground[x]);
+            }
+            ctx.lineTo(width, height);
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw tanks
+            drawTank(player, 'blue');
+            drawTank(ai, 'red');
+
+            // Draw projectile
+            if (projectile) {
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(projectile.x, projectile.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw HUD
+            ctx.fillStyle = 'white';
+            ctx.font = '12px Arial';
+            ctx.fillText(`Player Health: ${player.health}`, 10, 20);
+            ctx.fillText(`AI Health: ${ai.health}`, width - 80, 20);
+            if (turn === 'player') {
+                ctx.fillText(`Angle: ${player.angle}`, 10, 40);
+                ctx.fillText(`Power: ${player.power}`, 10, 60);
+                if (powerMode) {
+                    ctx.fillText('Power Mode', 10, 80);
+                }
+            }
+        }
+
+        function drawTank(tank, color) {
+            // Body
+            ctx.fillStyle = color;
+            ctx.fillRect(tank.x - tankSize.w / 2, tank.y - tankSize.h / 2, tankSize.w, tankSize.h);
+
+            // Barrel
+            const rad = tank.angle * Math.PI / 180;
+            const barrelLength = 15;
+            const bx = tank.x + barrelLength * Math.cos(rad) * tank.dir;
+            const by = tank.y - barrelLength * Math.sin(rad); // y decreases up
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(tank.x, tank.y);
+            ctx.lineTo(bx, by);
+            ctx.stroke();
+        }
+
+        function gameLoop() {
+            if (!gameOver) {
+                updateProjectile();
+            }
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
