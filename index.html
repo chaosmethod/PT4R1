@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=240, height=282, initial-scale=1.0">
-    <title>Pocket Tanks for Rabbit R1</title>
+    <title>Scorched Earth for Rabbit R1</title>
     <style>
         body {
             margin: 0;
@@ -61,11 +61,13 @@
         let projectile = null;
         let powerMode = false;
         let gameOver = false;
+        let wind = Math.random() * 10 - 5; // Wind speed, -5 to 5
         const gravity = 0.2;
         const tankSize = { w: 20, h: 10 };
         const turretRadius = 5;
         const barrelLength = 12;
-        const explosionRadius = 10;
+        const explosionRadius = 15;
+        const windFactor = 0.01; // How much wind affects projectile
 
         function generateTerrain() {
             let h = height - 50 - Math.random() * 20;
@@ -153,6 +155,7 @@
 
         function updateProjectile() {
             if (!projectile) return;
+            projectile.vx += wind * windFactor; // Apply wind
             projectile.x += projectile.vx;
             projectile.y += projectile.vy;
             projectile.vy += gravity;
@@ -184,12 +187,11 @@
         }
 
         function explode(ex, ey) {
-            // Simple crater
             for (let i = -explosionRadius; i <= explosionRadius; i++) {
                 const gx = Math.floor(ex + i);
                 if (gx >= 0 && gx < width) {
-                    const dist = Math.abs(i);
-                    ground[gx] += explosionRadius - dist + 1;
+                    const dy = Math.sqrt(explosionRadius * explosionRadius - i * i) || 0;
+                    ground[gx] = Math.floor(ground[gx] + dy);
                     ground[gx] = Math.min(height, ground[gx]);
                 }
             }
@@ -199,6 +201,7 @@
         }
 
         function switchTurn() {
+            wind = Math.random() * 10 - 5; // New wind each turn
             turn = turn === 'player' ? 'ai' : 'player';
             if (turn === 'ai') {
                 aiTurn();
@@ -206,21 +209,23 @@
         }
 
         function aiTurn() {
-            // Improved AI: approximate angle and power
+            // Simple AI with wind compensation
             const dx = player.x - ai.x;
             const dy = player.y - ai.y;
-            ai.angle = Math.atan2(-dy, dx) * 180 / Math.PI; // Approximate angle
-            ai.angle = Math.max(0, Math.min(90, Math.abs(ai.angle))); // Clamp
             const dist = Math.hypot(dx, dy);
-            ai.power = Math.sqrt(dist * gravity * 2) + Math.random() * 10 - 5;
-            ai.power = Math.max(20, Math.min(80, ai.power));
+            ai.angle = 45 + Math.random() * 30 - 15;
+            ai.angle = Math.max(0, Math.min(90, ai.angle));
+            let effectivePower = Math.sqrt(dist * gravity) * (1 + Math.abs(wind) * 0.1);
+            if (wind > 0 && ai.dir < 0) effectivePower += wind * 2; // Adjust for wind
+            else if (wind < 0 && ai.dir < 0) effectivePower -= Math.abs(wind) * 2;
+            ai.power = Math.max(20, Math.min(80, effectivePower + Math.random() * 10 - 5));
             fireProjectile(ai);
         }
 
         function checkWin() {
             if (player.health <= 0) {
                 gameOver = true;
-                draw(); // Redraw to show final state
+                draw();
                 ctx.fillStyle = 'white';
                 ctx.font = '20px Arial';
                 ctx.fillText('AI Wins!', width / 2 - 50, height / 2);
@@ -246,6 +251,7 @@
             powerMode = false;
             gameOver = false;
             turn = 'player';
+            wind = Math.random() * 10 - 5;
             generateTerrain();
             document.getElementById('restart').style.display = 'none';
         }
@@ -290,6 +296,28 @@
                     ctx.fillText('Power Mode', 10, 80);
                 }
             }
+            // Draw wind
+            ctx.fillText(`Wind: ${wind.toFixed(1)}`, width / 2 - 30, 20);
+            // Wind arrow
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width / 2 - 20, 15);
+            ctx.lineTo(width / 2 + 20 + wind * 2, 15);
+            ctx.stroke();
+            if (wind > 0) {
+                ctx.beginPath();
+                ctx.moveTo(width / 2 + 20 + wind * 2, 15);
+                ctx.lineTo(width / 2 + 15 + wind * 2, 10);
+                ctx.lineTo(width / 2 + 15 + wind * 2, 20);
+                ctx.fill();
+            } else if (wind < 0) {
+                ctx.beginPath();
+                ctx.moveTo(width / 2 - 20 + wind * 2, 15);
+                ctx.lineTo(width / 2 - 15 + wind * 2, 10);
+                ctx.lineTo(width / 2 - 15 + wind * 2, 20);
+                ctx.fill();
+            }
 
             // Draw power bar for visual feedback
             if (turn === 'player' && powerMode) {
@@ -305,7 +333,7 @@
             ctx.fillStyle = color;
             ctx.fillRect(tank.x - tankSize.w / 2, tank.y - tankSize.h / 2, tankSize.w, tankSize.h);
 
-            // Turret base (independent rotation visual)
+            // Turret base
             ctx.fillStyle = 'dark' + color;
             ctx.beginPath();
             ctx.arc(tank.x, tank.y - tankSize.h / 2 + turretRadius / 2, turretRadius, 0, Math.PI * 2);
@@ -315,7 +343,7 @@
             const rad = tank.angle * Math.PI / 180;
             const turretY = tank.y - tankSize.h / 2 + turretRadius / 2;
             const bx = tank.x + barrelLength * Math.cos(rad) * tank.dir;
-            const by = turretY - barrelLength * Math.sin(rad); // y decreases up
+            const by = turretY - barrelLength * Math.sin(rad);
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 2;
             ctx.beginPath();
