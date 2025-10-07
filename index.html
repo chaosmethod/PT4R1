@@ -9,10 +9,12 @@
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background: black;
+            background: #202030;
         }
         #game {
             display: block;
+            border-radius: 8px;
+            box-shadow: 0 0 10px #222;
         }
         .controls {
             position: absolute;
@@ -20,14 +22,21 @@
             left: 10px;
             display: flex;
             gap: 10px;
+            z-index: 10;
         }
         button {
-            padding: 5px 10px;
-            font-size: 12px;
-            background: #333;
-            color: white;
-            border: 1px solid white;
+            padding: 7px 14px;
+            font-size: 14px;
+            background: linear-gradient(90deg, #555 0%, #888 100%);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
             cursor: pointer;
+            box-shadow: 0 2px 6px #222;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: linear-gradient(90deg, #777 0%, #bbb 100%);
         }
         #restart {
             display: none;
@@ -35,8 +44,14 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            padding: 10px 20px;
-            font-size: 16px;
+            padding: 14px 32px;
+            font-size: 18px;
+            background: linear-gradient(90deg, #d44 0%, #f99 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px #222;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -54,19 +69,25 @@
         const width = canvas.width;
         const height = canvas.height;
 
+        // Visual details
         let ground = new Array(width).fill(height - 50); // Base ground level
         let player = { x: 30, y: 0, angle: 45, power: 50, health: 100, dir: 1 };
         let ai = { x: 210, y: 0, angle: 45, power: 50, health: 100, dir: -1 };
         let turn = 'player';
         let projectile = null;
+        let projectileTrail = [];
+        let explosionAnim = null;
         let powerMode = false;
         let gameOver = false;
         let playerMoves = 0;
         const gravity = 0.2;
-        const tankSize = { w: 20, h: 10 };
-        const turretRadius = 5;
-        const barrelLength = 12;
-        const explosionRadius = 15;
+        const tankSize = { w: 22, h: 12 };
+        const turretRadius = 7;
+        const barrelLength = 14;
+        const explosionRadius = 17;
+
+        // Decorations
+        let groundDetails = [];
 
         function generateTerrain() {
             let h = height - 50 - Math.random() * 20;
@@ -78,6 +99,21 @@
             }
             player.y = ground[player.x] - tankSize.h / 2;
             ai.y = ground[ai.x] - tankSize.h / 2;
+            generateGroundDetails();
+        }
+
+        function generateGroundDetails() {
+            groundDetails = [];
+            for (let i = 0; i < 18; i++) {
+                let gx = Math.floor(Math.random() * width);
+                let gy = ground[gx] - Math.random() * 7;
+                groundDetails.push({
+                    type: Math.random() < 0.7 ? "grass" : "rock",
+                    x: gx,
+                    y: gy,
+                    size: Math.random() * 4 + 3
+                });
+            }
         }
 
         generateTerrain();
@@ -101,7 +137,6 @@
             }
         });
 
-        // Handle PTT button for fire or confirm
         window.addEventListener('sideClick', () => {
             if (gameOver || turn !== 'player' || projectile) return;
             if (powerMode) {
@@ -111,7 +146,6 @@
             }
         });
 
-        // Touch buttons for movement and power mode
         document.getElementById('left').addEventListener('click', () => {
             if (gameOver || turn !== 'player' || projectile || playerMoves >= 5) return;
             moveTank(player, -5);
@@ -152,6 +186,7 @@
                 vx: vel * Math.cos(rad) * tank.dir,
                 vy: -vel * Math.sin(rad) // Negative for up (y increases down)
             };
+            projectileTrail = [];
         }
 
         function updateProjectile() {
@@ -160,16 +195,21 @@
             projectile.y += projectile.vy;
             projectile.vy += gravity;
 
+            projectileTrail.push({x: projectile.x, y: projectile.y});
+            if (projectileTrail.length > 25) projectileTrail.shift();
+
             if (projectile.x < 0 || projectile.x > width || projectile.y > height) {
                 projectile = null;
+                projectileTrail = [];
                 switchTurn();
                 return;
             }
 
             const px = Math.floor(projectile.x);
             if (projectile.y >= ground[px]) {
-                explode(px, projectile.y);
+                startExplosion(px, projectile.y);
                 projectile = null;
+                projectileTrail = [];
                 switchTurn();
                 return;
             }
@@ -179,14 +219,37 @@
             if (Math.abs(projectile.x - opponent.x) < tankSize.w / 2 + 2 &&
                 Math.abs(projectile.y - opponent.y) < tankSize.h / 2 + 2) {
                 opponent.health -= 20; // Fixed damage
-                explode(projectile.x, projectile.y);
+                startExplosion(projectile.x, projectile.y, true);
                 projectile = null;
+                projectileTrail = [];
                 checkWin();
                 switchTurn();
             }
         }
 
-        function explode(ex, ey) {
+        function startExplosion(ex, ey, hitTank=false) {
+            explosionAnim = {
+                x: ex,
+                y: ey,
+                r: 0,
+                maxR: explosionRadius + 7,
+                frame: 0,
+                hitTank: hitTank
+            };
+            // Deform terrain later in animation
+        }
+
+        function updateExplosion() {
+            if (!explosionAnim) return;
+            explosionAnim.r += 2.7;
+            explosionAnim.frame++;
+            if (explosionAnim.r >= explosionAnim.maxR) {
+                explode(explosionAnim.x, explosionAnim.y, explosionAnim.hitTank);
+                explosionAnim = null;
+            }
+        }
+
+        function explode(ex, ey, hitTank=false) {
             for (let i = -explosionRadius; i <= explosionRadius; i++) {
                 const gx = Math.floor(ex + i);
                 if (gx >= 0 && gx < width) {
@@ -203,7 +266,7 @@
         function switchTurn() {
             turn = turn === 'player' ? 'ai' : 'player';
             if (turn === 'ai') {
-                aiTurn();
+                setTimeout(aiTurn, 600); // Small delay for realism
             }
         }
 
@@ -223,16 +286,26 @@
             if (player.health <= 0) {
                 gameOver = true;
                 draw();
-                ctx.fillStyle = 'white';
-                ctx.font = '20px Arial';
-                ctx.fillText('AI Wins!', width / 2 - 50, height / 2);
+                ctx.save();
+                ctx.fillStyle = 'rgba(24,24,24,0.85)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.restore();
+                ctx.fillStyle = '#ffaaaa';
+                ctx.font = 'bold 22px Arial';
+                ctx.textAlign = "center";
+                ctx.fillText('AI Wins!', width / 2, height / 2 - 20);
                 document.getElementById('restart').style.display = 'block';
             } else if (ai.health <= 0) {
                 gameOver = true;
                 draw();
-                ctx.fillStyle = 'white';
-                ctx.font = '20px Arial';
-                ctx.fillText('Player Wins!', width / 2 - 60, height / 2);
+                ctx.save();
+                ctx.fillStyle = 'rgba(24,24,24,0.85)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.restore();
+                ctx.fillStyle = '#aaffaa';
+                ctx.font = 'bold 22px Arial';
+                ctx.textAlign = "center";
+                ctx.fillText('Player Wins!', width / 2, height / 2 - 20);
                 document.getElementById('restart').style.display = 'block';
             }
         }
@@ -245,6 +318,8 @@
             ai.angle = 45;
             ai.power = 50;
             projectile = null;
+            projectileTrail = [];
+            explosionAnim = null;
             powerMode = false;
             gameOver = false;
             turn = 'player';
@@ -253,13 +328,40 @@
             document.getElementById('restart').style.display = 'none';
         }
 
-        function draw() {
-            // Clear
-            ctx.fillStyle = 'skyblue';
-            ctx.fillRect(0, 0, width, height);
+        // --- Drawing functions ---
 
-            // Draw ground
-            ctx.fillStyle = 'green';
+        function drawGradientSky() {
+            let sky = ctx.createLinearGradient(0, 0, 0, height);
+            sky.addColorStop(0, "#8ccfff");
+            sky.addColorStop(0.5, "#e7ecff");
+            sky.addColorStop(1, "#fff4c6");
+            ctx.fillStyle = sky;
+            ctx.fillRect(0, 0, width, height);
+        }
+
+        function drawClouds() {
+            for (let i = 0; i < 3; i++) {
+                let cx = 40 + i * 60 + Math.sin(Date.now() / 900 + i * 2) * 12;
+                let cy = 25 + Math.sin(Date.now() / 1300 + i * 3) * 6;
+                ctx.save();
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = "#fff";
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, 24, 10, 0, 0, 2 * Math.PI);
+                ctx.ellipse(cx + 13, cy + 5, 16, 7, 0, 0, 2 * Math.PI);
+                ctx.ellipse(cx - 13, cy + 5, 14, 7, 0, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function drawTerrain() {
+            // Gradient ground
+            let grad = ctx.createLinearGradient(0, height - 100, 0, height);
+            grad.addColorStop(0, "#b2ce7f");
+            grad.addColorStop(0.6, "#6a412a");
+            grad.addColorStop(1, "#3a2418");
+            ctx.fillStyle = grad;
             ctx.beginPath();
             ctx.moveTo(0, height);
             for (let x = 0; x < width; x++) {
@@ -269,50 +371,97 @@
             ctx.closePath();
             ctx.fill();
 
-            // Draw tanks
-            drawTank(player, 'blue');
-            drawTank(ai, 'red');
+            // Decorations (grass/rocks)
+            for (let det of groundDetails) {
+                if (det.type === "grass") {
+                    ctx.save();
+                    ctx.strokeStyle = "#3f7e1f";
+                    ctx.lineWidth = 1.2;
+                    for (let k = -1; k <= 1; k++) {
+                        ctx.beginPath();
+                        ctx.moveTo(det.x, det.y);
+                        ctx.lineTo(det.x + k * 2, det.y - det.size);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                } else {
+                    ctx.save();
+                    ctx.fillStyle = "#86837a";
+                    ctx.beginPath();
+                    ctx.arc(det.x, det.y, det.size / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+        }
 
-            // Draw projectile
-            if (projectile) {
-                ctx.fillStyle = 'black';
+        function drawProjectile() {
+            // Trail
+            ctx.save();
+            for (let i = 0; i < projectileTrail.length; i++) {
+                let pt = projectileTrail[i];
+                ctx.globalAlpha = i / projectileTrail.length * 0.6;
                 ctx.beginPath();
-                ctx.arc(projectile.x, projectile.y, 2, 0, Math.PI * 2);
+                ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
+                ctx.fillStyle = "#ffcf4d";
                 ctx.fill();
             }
-
-            // Draw HUD
-            ctx.fillStyle = 'white';
-            ctx.font = '12px Arial';
-            ctx.fillText(`Player Health: ${player.health}`, 10, 20);
-            ctx.fillText(`AI Health: ${ai.health}`, width - 80, 20);
-            if (turn === 'player') {
-                ctx.fillText(`Angle: ${player.angle}`, 10, 40);
-                ctx.fillText(`Power: ${player.power}`, 10, 60);
-                if (powerMode) {
-                    ctx.fillText('Power Mode', 10, 80);
-                }
-                ctx.fillText(`Moves Left: ${5 - playerMoves}`, 10, 100);
+            ctx.restore();
+            // Projectile
+            if (projectile) {
+                ctx.save();
+                ctx.shadowColor = "#fff";
+                ctx.shadowBlur = 4;
+                ctx.beginPath();
+                ctx.arc(projectile.x, projectile.y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = "#d44";
+                ctx.fill();
+                ctx.restore();
             }
+        }
 
-            // Draw power bar for visual feedback
-            if (turn === 'player' && powerMode) {
-                ctx.fillStyle = 'gray';
-                ctx.fillRect(10, 90, 100, 10);
-                ctx.fillStyle = 'yellow';
-                ctx.fillRect(10, 90, player.power, 10);
+        function drawExplosion() {
+            if (!explosionAnim) return;
+            for (let i = 0; i < 7; i++) {
+                let angle = (i / 7) * Math.PI * 2;
+                let r = explosionAnim.r * (0.8 + Math.random() * 0.2);
+                let ex = explosionAnim.x + Math.cos(angle) * r;
+                let ey = explosionAnim.y + Math.sin(angle) * r;
+                ctx.save();
+                ctx.globalAlpha = 0.65 - explosionAnim.frame * 0.012;
+                ctx.beginPath();
+                ctx.arc(ex, ey, 5 + Math.random() * 3, 0, Math.PI * 2);
+                ctx.fillStyle = "#ffcf4d";
+                ctx.fill();
+                ctx.restore();
             }
         }
 
         function drawTank(tank, color) {
+            ctx.save();
+            // Treads
+            ctx.fillStyle = "#333";
+            ctx.fillRect(tank.x - tankSize.w / 2, tank.y - tankSize.h / 2 + 7, tankSize.w, 5);
+
             // Body
-            ctx.fillStyle = color;
-            ctx.fillRect(tank.x - tankSize.w / 2, tank.y - tankSize.h / 2, tankSize.w, tankSize.h);
+            ctx.beginPath();
+            ctx.moveTo(tank.x - tankSize.w / 2, tank.y - tankSize.h / 2 + 7);
+            ctx.lineTo(tank.x - tankSize.w / 2 + 4, tank.y - tankSize.h / 2);
+            ctx.lineTo(tank.x + tankSize.w / 2 - 4, tank.y - tankSize.h / 2);
+            ctx.lineTo(tank.x + tankSize.w / 2, tank.y - tankSize.h / 2 + 7);
+            ctx.closePath();
+            let grad = ctx.createLinearGradient(tank.x - tankSize.w / 2, tank.y, tank.x + tankSize.w / 2, tank.y);
+            grad.addColorStop(0, color === 'blue' ? "#4f8dfb" : "#fb4f4f");
+            grad.addColorStop(1, color === 'blue' ? "#1243a7" : "#a71212");
+            ctx.fillStyle = grad;
+            ctx.fill();
 
             // Turret base
-            ctx.fillStyle = 'dark' + color;
             ctx.beginPath();
             ctx.arc(tank.x, tank.y - tankSize.h / 2 + turretRadius / 2, turretRadius, 0, Math.PI * 2);
+            ctx.fillStyle = color === 'blue' ? "#2056c7" : "#c72020";
+            ctx.shadowColor = "#fff";
+            ctx.shadowBlur = 4;
             ctx.fill();
 
             // Barrel
@@ -320,17 +469,100 @@
             const turretY = tank.y - tankSize.h / 2 + turretRadius / 2;
             const bx = tank.x + barrelLength * Math.cos(rad) * tank.dir;
             const by = turretY - barrelLength * Math.sin(rad);
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = "#232323";
+            ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(tank.x, turretY);
             ctx.lineTo(bx, by);
             ctx.stroke();
+
+            // Highlight
+            ctx.globalAlpha = 0.16;
+            ctx.beginPath();
+            ctx.arc(tank.x, tank.y - tankSize.h / 2 + turretRadius / 2 + 2, turretRadius + 2, 0, Math.PI * 2);
+            ctx.fillStyle = "#fff";
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+        }
+
+        function drawHUD() {
+            ctx.save();
+            ctx.globalAlpha = 0.7;
+            ctx.fillStyle = "#1c1c26";
+            ctx.fillRect(5, 6, 110, 44);
+            ctx.fillRect(width - 95, 6, 85, 44);
+            ctx.globalAlpha = 1;
+
+            // Health bars
+            ctx.save();
+            ctx.font = 'bold 12px Arial';
+            // Player health
+            ctx.fillStyle = "#fff";
+            ctx.fillText("Player", 10, 19);
+            ctx.fillStyle = "#aaffaa";
+            ctx.fillRect(10, 26, player.health, 10);
+            ctx.strokeStyle = "#fff";
+            ctx.strokeRect(10, 26, 100, 10);
+
+            // AI health
+            ctx.fillStyle = "#fff";
+            ctx.fillText("AI", width - 90, 19);
+            ctx.fillStyle = "#ffaaaa";
+            ctx.fillRect(width - 90, 26, ai.health, 10);
+            ctx.strokeStyle = "#fff";
+            ctx.strokeRect(width - 90, 26, 100, 10);
+            ctx.restore();
+
+            // Player stats
+            if (turn === 'player') {
+                ctx.save();
+                ctx.font = '12px Arial';
+                ctx.fillStyle = "#fff";
+                ctx.fillText(`Angle: ${player.angle}°`, 10, 42);
+                ctx.fillText(`Power: ${player.power}`, 60, 42);
+                if (powerMode) {
+                    ctx.fillStyle = "#ffe655";
+                    ctx.font = 'bold 13px Arial';
+                    ctx.fillText('Power Mode', 10, 56);
+                }
+                ctx.fillStyle = "#fff";
+                ctx.fillText(`Moves Left: ${5 - playerMoves}`, 60, 56);
+                ctx.restore();
+
+                // Power bar
+                if (powerMode) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.7;
+                    ctx.fillStyle = "#303030";
+                    ctx.fillRect(10, 62, 100, 10);
+                    ctx.globalAlpha = 1;
+                    ctx.fillStyle = "#ffe655";
+                    ctx.fillRect(10, 62, player.power, 10);
+                    ctx.strokeStyle = "#fff";
+                    ctx.strokeRect(10, 62, 100, 10);
+                    ctx.restore();
+                }
+            }
+            ctx.restore();
+        }
+
+        function draw() {
+            drawGradientSky();
+            drawClouds();
+            drawTerrain();
+            drawTank(player, 'blue');
+            drawTank(ai, 'red');
+            drawProjectile();
+            drawExplosion();
+            drawHUD();
         }
 
         function gameLoop() {
             if (!gameOver) {
                 updateProjectile();
+                updateExplosion();
             }
             draw();
             requestAnimationFrame(gameLoop);
