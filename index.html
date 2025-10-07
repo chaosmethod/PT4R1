@@ -18,7 +18,6 @@
         .game-container {
             position: relative;
             width: 240px;
-            /* Remove large top margin, use flex centering instead */
         }
         #game {
             display: block;
@@ -28,14 +27,12 @@
         .controls {
             position: absolute;
             left: 0;
-            bottom: 0;
+            bottom: 36px; /* Move the buttons up into the canvas area */
             width: 100%;
             display: flex;
             justify-content: flex-start;
             gap: 6px;
             z-index: 10;
-            /* Add a little spacing below canvas */
-            margin-bottom: 6px;
         }
         button {
             padding: 2px 7px;
@@ -73,8 +70,7 @@
 <body>
     <div class="game-container">
         <canvas id="game" width="240" height="282"></canvas>
-        <!-- Place controls below the canvas, not absolutely positioned -->
-        <div class="controls" style="position: static; margin-top: 8px; justify-content: flex-start;">
+        <div class="controls">
             <button id="left">Left</button>
             <button id="right">Right</button>
             <button id="power">Adjust Power</button>
