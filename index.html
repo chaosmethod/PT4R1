@@ -10,11 +10,15 @@
             padding: 0;
             overflow: hidden;
             background: #202030;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .game-container {
             position: relative;
             width: 240px;
-            margin: 48px auto 0 auto;
+            /* Remove large top margin, use flex centering instead */
         }
         #game {
             display: block;
@@ -30,6 +34,8 @@
             justify-content: flex-start;
             gap: 6px;
             z-index: 10;
+            /* Add a little spacing below canvas */
+            margin-bottom: 6px;
         }
         button {
             padding: 2px 7px;
@@ -67,7 +73,8 @@
 <body>
     <div class="game-container">
         <canvas id="game" width="240" height="282"></canvas>
-        <div class="controls">
+        <!-- Place controls below the canvas, not absolutely positioned -->
+        <div class="controls" style="position: static; margin-top: 8px; justify-content: flex-start;">
             <button id="left">Left</button>
             <button id="right">Right</button>
             <button id="power">Adjust Power</button>
